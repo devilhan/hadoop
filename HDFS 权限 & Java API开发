@@ -1,0 +1,98 @@
+# Hadoop - HDFS权限&HDFS java API开发
+Permission	Owner	Group		   Size   Replication  BlockSize  Name
+drwxr-xr-x	root	supergroup	0 B        0          0 B      user
+-rw-r--r--	root	supergroup	8.61 KB    2         128 MB  install.log
+
+hdfs是一个文件系统
+	类unix、linux
+	有用户概念
+	hdfs没有相关命令和接口去创建用户
+		信任客户端 <- 默认情况使用的 操作系统提供的用户
+				扩展 kerberos LDAP  继承第三方用户认证系统
+	有超级用户的概念
+		linux系统中超级用户：root
+		hdfs系统中超级用户： 是namenode进程的启动用户
+		有权限概念
+		hdfs的权限是自己控制的 来自于hdfs的超级用户
+
+**实操**（一般在企业中不会用root做什么事情）
+	面向操作系统		root是管理员  其他用户都叫【普通用户】
+	面向操作系统的软件	谁启动，管理这个进程，那么这个用户叫做这个软件的管理员
+	切换我们用root搭建的HDFS  用god这个用户来启动
+	node01~node04:
+		*)stop-dfs.sh
+		1)添加用户：root
+			useradd god
+			passwd god
+		2）讲资源与用户绑定（a,安装部署程序；b,数据存放的目录）
+			chown -R god  src
+			chown -R god /opt/bigdata/hadoop-2.6.5
+			chown -R god /var/bigdata/hadoop
+		3）切换到god去启动  start-dfs.sh  < 需要免密
+			给god做免密
+			*我们是HA模式：免密的2中场景都要做的
+			ssh localhost   >> 为了拿到.ssh			node01~node02:
+				cd /home/god/.ssh
+				ssh-keygen -t dsa -P '' -f  ./id_dsa
+			   [cat id_dsa.pub >> authorized_keys
+				chmod 600 authorized_keys]
+			node01:
+				ssh-copy-id -i id_dsa node01
+				ssh-copy-id -i id_dsa node02
+				ssh-copy-id -i id_dsa node03
+				ssh-copy-id -i id_dsa node04
+			node02
+				cd /home/god/.ssh
+				ssh-copy-id -i id_dsa node01
+				ssh-copy-id -i id_dsa node02		4)hdfs-site.xml
+			<property>
+			  <name>dfs.ha.fencing.ssh.private-key-files</name>
+			  <value>/home/god/.ssh/id_dsa</value>
+			</property>
+			分发给node02~04
+		5)god  :  start-dfs.sh
+
+**用户权限验证实操**
+	node01:
+		su god
+		hdfs dfs -mkdir   /temp
+		hdfs dfs -chown god:ooxx  /temp
+		hdfs dfs -chmod 770 /temp
+	node04:
+		root:
+			useradd good
+			groupadd ooxx
+			usermod -a -G ooxx good
+			id good
+		su good
+			hdfs dfs -mkdir /temp/abc  <失败
+			hdfs groups 
+				good:        <因为hdfs已经启动了，不知道你操作系统又偷偷摸摸创建了用户和组
+	*node01:
+		root:
+			useradd good
+			groupadd ooxx
+			usermod -a -G ooxx good
+		su god 
+			hdfs dfsadmin -refreshUserToGroupsMappings
+	node04:
+		good:
+			hdfs groups 
+				good : good ooxx
+	结论：默认hdfs依赖操作系统上的用户和组
+
+**hdfs api 实操**
+	语义：开发hdfs的client
+	权限：1）参考系统登录用户名；2）参考环境变量；3）代码中给出；
+	HADOOP_USER_NAME  god
+		这一步操作优先启动idea
+	jdk版本：集群和开发环境jdk版本一致~！！
+		maven：构建工具  
+		包含了依赖管理（pom）
+		jar包有仓库的概念，互联网仓库全，大
+			本地仓库，用过的会缓存
+		打包、测试、清除、构建项目目录。。。。
+		GAV定位。。。。
+		https://mvnrepository.com/
+	hdfs的pom：
+		hadoop：（common，hdfs，yarn，mapreduce）
